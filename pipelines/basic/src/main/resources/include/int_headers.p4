@@ -32,7 +32,9 @@ header int_header_t {
     bit<4>  instruction_mask_0407;
     bit<4>  instruction_mask_0811;
     bit<4>  instruction_mask_1215;
-    bit<16> rsvd2;
+    //bit<16> rsvd2;
+    bit<8>  omittence_hop_index;
+    bit<8>  omittence_instruction_mask;
 }
 
 // INT meta-value headers - different header for each value type
@@ -124,6 +126,10 @@ struct local_metadata_t {
     bit<16>       selector;
     int_metadata_t int_meta;
     bit<32>       flow_hash; // flow hash added for DS-INT
+    bit<4> hop_latency_sampling_mode; // sampling mode added for DS-INT
+    bit<32> hop_latency_deviation;
+    bit<32> dsint_hop_latency_deviation_threshold;
+    bit<32> dsint_hop_latency_latest;
 }
 
 #endif

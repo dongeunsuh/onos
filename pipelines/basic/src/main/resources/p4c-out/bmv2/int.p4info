@@ -159,6 +159,28 @@ tables {
 }
 tables {
   preamble {
+    id: 33581224
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.tb_dsint_calculate_flow_hash"
+    alias: "tb_dsint_calculate_flow_hash"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.ipv4.$valid$"
+    bitwidth: 1
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16818509
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly()"
+  }
+  size: 1024
+  is_const_table: true
+}
+tables {
+  preamble {
     id: 33574165
     name: "int_egress.process_int_transit.tb_int_insert"
     alias: "tb_int_insert"
@@ -404,6 +426,48 @@ actions {
     id: 16818509
     name: "int_egress.process_int_transit.hop_latency_sampling_deviation.dsint_calculate_flow_hash"
     alias: "dsint_calculate_flow_hash"
+  }
+}
+actions {
+  preamble {
+    id: 16821498
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.read_hop_latency_deviation_threshold"
+    alias: "read_hop_latency_deviation_threshold"
+  }
+}
+actions {
+  preamble {
+    id: 16798340
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.read_hop_latency_latest"
+    alias: "read_hop_latency_latest"
+  }
+}
+actions {
+  preamble {
+    id: 16839586
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.update_hop_latency_latest"
+    alias: "update_hop_latency_latest"
+  }
+}
+actions {
+  preamble {
+    id: 16782595
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.calculate_hop_latency_deviation"
+    alias: "calculate_hop_latency_deviation"
+  }
+}
+actions {
+  preamble {
+    id: 16797227
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.set_omittence_information"
+    alias: "set_omittence_information"
+  }
+}
+actions {
+  preamble {
+    id: 16818285
+    name: "int_egress.process_int_transit.read_hop_latency_sampling_mode"
+    alias: "read_hop_latency_sampling_mode"
   }
 }
 actions {

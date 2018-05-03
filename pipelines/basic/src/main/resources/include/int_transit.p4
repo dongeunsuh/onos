@@ -26,15 +26,20 @@ const bit<4> DEVIATION_MA = 0x2;
 const bit<4> SAMPLEVALUE = 0x3;
 const bit<4> SAMPLEVALUE_MA = 0x4;
 
+register<bit<4>>(1) hop_latency_sampling_mode_reg;
+/* Resgister variables for the latest sample values in DS-INT */
+register<bit<32>>(FLOW_NUM) dsint_hop_latency_latest_reg;
+/* Register variable for hop latency sampling threshold in DS-INT */
+register<bit<32>>(1) dsint_hop_latency_threshold_reg;
+
+
 // control function that excecutes distributed sampling for the hop latency
 control hop_latency_sampling_deviation (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
     inout standard_metadata_t standard_metadata) {
-        /* Resgister variables for the latest sample values in DS-INT */
-        register<bit<32>>(FLOW_NUM) dsint_hop_latency_latest_reg;
-        /* Register variable for hop latency sampling threshold in DS-INT */
-        register<bit<32>>(1) dsint_hop_latency_threshold_reg;
+
+
         action dsint_calculate_flow_hash(){
             hash(
                   local_metadata.flow_hash,
@@ -47,49 +52,71 @@ control hop_latency_sampling_deviation (
                     local_metadata.l4_dst_port },
                     FLOW_NUM);
         }
-
-        apply {
-            if (hdr.int_hop_latency.isValid()) {
-                // invalidate the hop latency inserted by the original INT
-                hdr.int_hop_latency.setInvalid();
-                // calculate flow identifier
-                if (hdr.ipv4.isValid()){
-                   dsint_calculate_flow_hash();
-                }
-                // read the delta value for hop latency
-                bit<32> dsint_hop_latency_deviation_threshold;
-                dsint_hop_latency_threshold_reg.read(dsint_hop_latency_deviation_threshold,0);
-
-                // read the lastly sampled hop latency value
-                bit<32> dsint_hop_latency_latest;
-                dsint_hop_latency_latest_reg.read(dsint_hop_latency_latest, (bit<32>)local_metadata.flow_hash);
-
-                // Distributed Sampling
-                if ((bit<32>) dsint_hop_latency_latest == 0){
-                    hdr.int_hop_latency.setValid();
-                    hdr.int_hop_latency.hop_latency = (bit<32>) standard_metadata.deq_timedelta;
-                    dsint_hop_latency_latest_reg.write((bit<32>)local_metadata.flow_hash, (bit<32>)hdr.int_hop_latency.hop_latency);
-                } else {
-                    bit<32> hop_latency_deviation = (bit<32>) standard_metadata.deq_timedelta - dsint_hop_latency_latest;
-                    bit<32> mask = hop_latency_deviation >> 31;
-                    hop_latency_deviation = (hop_latency_deviation ^ mask) - mask; // absolute value of the latency deviation
-
-                    if (hop_latency_deviation <= dsint_hop_latency_deviation_threshold){
-                        // do nothing
-                        local_metadata.int_meta.insert_byte_cnt = local_metadata.int_meta.insert_byte_cnt - 4;
-                        // set omittence infomration (hop index, metadata type)
-                    } else {
-                        hdr.int_hop_latency.setValid();
-                        hdr.int_hop_latency.hop_latency = (bit<32>) standard_metadata.deq_timedelta;
-                        dsint_hop_latency_latest_reg.write(local_metadata.flow_hash, hdr.int_hop_latency.hop_latency);
-                    }
-                }
-
-            } else {
-                // do nothing (instruction bit for hop latency is not set)
+        table tb_dsint_calculate_flow_hash {
+            key = {
+                hdr.ipv4.isValid():exact;
+            }
+            actions = {
+                dsint_calculate_flow_hash();
+            }
+            const entries = {
+                (true) : dsint_calculate_flow_hash();
             }
         }
-}
+        action read_hop_latency_deviation_threshold(){
+            dsint_hop_latency_threshold_reg.read(local_metadata.dsint_hop_latency_deviation_threshold,32w0);
+        }
+        action read_hop_latency_latest(){
+            dsint_hop_latency_latest_reg.read(local_metadata.dsint_hop_latency_latest, (bit<32>)local_metadata.flow_hash);
+        }
+        action update_hop_latency_latest(){
+            dsint_hop_latency_latest_reg.write((bit<32>)local_metadata.flow_hash, (bit<32>)hdr.int_hop_latency.hop_latency);
+        }
+        action calculate_hop_latency_deviation(){
+            local_metadata.hop_latency_deviation = (bit<32>) standard_metadata.deq_timedelta - local_metadata.dsint_hop_latency_latest;
+            bit<32> mask = local_metadata.hop_latency_deviation >> 31;
+            local_metadata.hop_latency_deviation = (local_metadata.hop_latency_deviation ^ mask) - mask; // absolute value of the latency deviation
+        }
+
+
+
+        action set_omittence_information() {
+              // update insert_byte_count and set omittence infomration (hop index, metadata type)
+              local_metadata.int_meta.insert_byte_cnt = local_metadata.int_meta.insert_byte_cnt - 4;
+              // set omittence information
+              hdr.int_header.omittence_hop_index = hdr.int_header.total_hop_cnt;
+              hdr.int_header.omittence_instruction_mask = 0b00100000;
+        }
+        apply {
+            if (hdr.int_hop_latency.isValid()) {
+                /* invalidate the hop latency field
+                inserted by the original INT */
+                hdr.int_hop_latency.setInvalid();
+                tb_dsint_calculate_flow_hash.apply();
+                read_hop_latency_deviation_threshold();
+                read_hop_latency_latest();
+
+                /* deviation-based sampling for hop latency */
+                if (local_metadata.dsint_hop_latency_latest == 32w0){
+                    hdr.int_hop_latency.setValid();
+                    hdr.int_hop_latency.hop_latency =
+                    (bit<32>) standard_metadata.deq_timedelta;
+                    update_hop_latency_latest();
+                } else {
+                    calculate_hop_latency_deviation();
+                    if (local_metadata.hop_latency_deviation <=
+                        local_metadata.dsint_hop_latency_deviation_threshold){
+                        set_omittence_information();
+                    } else {
+                        hdr.int_hop_latency.setValid();
+                        hdr.int_hop_latency.hop_latency =
+                        (bit<32>) standard_metadata.deq_timedelta;
+                        update_hop_latency_latest();
+                    }
+                }
+            }
+        }
+    }
 
 control hop_latency_sampling_deviation_ma (
     inout headers_t hdr,
@@ -126,7 +153,11 @@ control process_int_transit (
     direct_counter(CounterType.packets_and_bytes) counter_int_insert;
     direct_counter(CounterType.packets_and_bytes) counter_int_inst_0003;
     direct_counter(CounterType.packets_and_bytes) counter_int_inst_0407;
-        register<bit<4>>(1) hop_latency_sampling_mode_reg;
+
+
+    action read_hop_latency_sampling_mode() {
+        hop_latency_sampling_mode_reg.read(local_metadata.hop_latency_sampling_mode,32w0);
+    }
 
     /* Resister variable for DS-INT mode. If set, excecute DS-INT, otherwise, execute original INT. */
 //    register<bit<1>>(1) dsint_on;
@@ -395,28 +426,34 @@ control process_int_transit (
         size = 16;
     }
 
+/*    table select_hop_latency_mode {
+        key = {
+            local_metadata.hop_latency_sampling_mode : exact;
+        }
+        actions = {
+            hop_latency_sampling_deviation.apply(hdr, local_metadata, standard_metadata);
+        }
+    }*/
+
+
     apply {
         tb_int_insert.apply();
         tb_int_inst_0003.apply();
         tb_int_inst_0407.apply();
-/*      apply select (hop_latency_sampling_mode) {
-            INT : hop_latency_sampling_deviation.apply(hdr, local_metadata, standard_metadata);
-        }*/
-        bit<4> hop_latency_sampling_mode;
-        hop_latency_sampling_mode_reg.read(hop_latency_sampling_mode,0);
-        
-        if (hop_latency_sampling_mode==INT) {
+        int_update_total_hop_cnt();
+
+        read_hop_latency_sampling_mode();
+        if (local_metadata.hop_latency_sampling_mode==INT) {
             // original INT
-        } else if ((bit<4>) hop_latency_sampling_mode==(bit<4>) DEVIATION) {
+        } else if (local_metadata.hop_latency_sampling_mode== DEVIATION) {
             hop_latency_sampling_deviation.apply(hdr, local_metadata, standard_metadata);
-        } else if (hop_latency_sampling_mode==DEVIATION_MA) {
+        } else if (local_metadata.hop_latency_sampling_mode==DEVIATION_MA) {
             hop_latency_sampling_deviation_ma.apply(hdr, local_metadata, standard_metadata);
-        } else if (hop_latency_sampling_mode==SAMPLEVALUE) {
+        } else if (local_metadata.hop_latency_sampling_mode==SAMPLEVALUE) {
             hop_latency_sampling_samplevalue.apply(hdr, local_metadata, standard_metadata);
-        } else if (hop_latency_sampling_mode== SAMPLEVALUE_MA) {
+        } else if (local_metadata.hop_latency_sampling_mode== SAMPLEVALUE_MA) {
             hop_latency_sampling_samplevalue_ma.apply(hdr, local_metadata, standard_metadata);
         }
-        int_update_total_hop_cnt();
     }
 }
 
