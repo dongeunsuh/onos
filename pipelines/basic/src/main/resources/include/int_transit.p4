@@ -17,6 +17,107 @@
 /* -*- P4_16 -*- */
 #ifndef __INT_TRANSIT__
 #define __INT_TRANSIT__
+
+const bit<32> FLOW_NUM = 0xFFFFFFFF;
+
+const bit<4> INT = 0x0;
+const bit<4> DEVIATION = 0x1;
+const bit<4> DEVIATION_MA = 0x2;
+const bit<4> SAMPLEVALUE = 0x3;
+const bit<4> SAMPLEVALUE_MA = 0x4;
+
+// control function that excecutes distributed sampling for the hop latency
+control hop_latency_sampling_deviation (
+    inout headers_t hdr,
+    inout local_metadata_t local_metadata,
+    inout standard_metadata_t standard_metadata) {
+        /* Resgister variables for the latest sample values in DS-INT */
+        register<bit<32>>(FLOW_NUM) dsint_hop_latency_latest_reg;
+        /* Register variable for hop latency sampling threshold in DS-INT */
+        register<bit<32>>(1) dsint_hop_latency_threshold_reg;
+        action dsint_calculate_flow_hash(){
+            hash(
+                  local_metadata.flow_hash,
+                  HashAlgorithm.crc32,
+                  32w0,
+                  { hdr.ipv4.src_addr,
+                    hdr.ipv4.dst_addr,
+                    hdr.ipv4.protocol,
+                    local_metadata.l4_src_port,
+                    local_metadata.l4_dst_port },
+                    FLOW_NUM);
+        }
+
+        apply {
+            if (hdr.int_hop_latency.isValid()) {
+                // invalidate the hop latency inserted by the original INT
+                hdr.int_hop_latency.setInvalid();
+                // calculate flow identifier
+                if (hdr.ipv4.isValid()){
+                   dsint_calculate_flow_hash();
+                }
+                // read the delta value for hop latency
+                bit<32> dsint_hop_latency_deviation_threshold;
+                dsint_hop_latency_threshold_reg.read(dsint_hop_latency_deviation_threshold,0);
+
+                // read the lastly sampled hop latency value
+                bit<32> dsint_hop_latency_latest;
+                dsint_hop_latency_latest_reg.read(dsint_hop_latency_latest, (bit<32>)local_metadata.flow_hash);
+
+                // Distributed Sampling
+                if ((bit<32>) dsint_hop_latency_latest == 0){
+                    hdr.int_hop_latency.setValid();
+                    hdr.int_hop_latency.hop_latency = (bit<32>) standard_metadata.deq_timedelta;
+                    dsint_hop_latency_latest_reg.write((bit<32>)local_metadata.flow_hash, (bit<32>)hdr.int_hop_latency.hop_latency);
+                } else {
+                    bit<32> hop_latency_deviation = (bit<32>) standard_metadata.deq_timedelta - dsint_hop_latency_latest;
+                    bit<32> mask = hop_latency_deviation >> 31;
+                    hop_latency_deviation = (hop_latency_deviation ^ mask) - mask; // absolute value of the latency deviation
+
+                    if (hop_latency_deviation <= dsint_hop_latency_deviation_threshold){
+                        // do nothing
+                        local_metadata.int_meta.insert_byte_cnt = local_metadata.int_meta.insert_byte_cnt - 4;
+                        // set omittence infomration (hop index, metadata type)
+                    } else {
+                        hdr.int_hop_latency.setValid();
+                        hdr.int_hop_latency.hop_latency = (bit<32>) standard_metadata.deq_timedelta;
+                        dsint_hop_latency_latest_reg.write(local_metadata.flow_hash, hdr.int_hop_latency.hop_latency);
+                    }
+                }
+
+            } else {
+                // do nothing (instruction bit for hop latency is not set)
+            }
+        }
+}
+
+control hop_latency_sampling_deviation_ma (
+    inout headers_t hdr,
+    inout local_metadata_t local_metadata,
+    inout standard_metadata_t standard_metadata) {
+    apply {
+
+    }
+}
+control hop_latency_sampling_samplevalue (
+    inout headers_t hdr,
+    inout local_metadata_t local_metadata,
+    inout standard_metadata_t standard_metadata) {
+    apply {
+
+    }
+}
+
+control hop_latency_sampling_samplevalue_ma (
+    inout headers_t hdr,
+    inout local_metadata_t local_metadata,
+    inout standard_metadata_t standard_metadata) {
+    apply {
+
+    }
+}
+
+
 control process_int_transit (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
@@ -25,6 +126,11 @@ control process_int_transit (
     direct_counter(CounterType.packets_and_bytes) counter_int_insert;
     direct_counter(CounterType.packets_and_bytes) counter_int_inst_0003;
     direct_counter(CounterType.packets_and_bytes) counter_int_inst_0407;
+        register<bit<4>>(1) hop_latency_sampling_mode_reg;
+
+    /* Resister variable for DS-INT mode. If set, excecute DS-INT, otherwise, execute original INT. */
+//    register<bit<1>>(1) dsint_on;
+
 
     action int_update_total_hop_cnt() {
         hdr.int_header.total_hop_cnt = hdr.int_header.total_hop_cnt + 1;
@@ -47,10 +153,10 @@ control process_int_transit (
         hdr.int_port_ids.egress_port_id =
         (bit<16>) standard_metadata.egress_port;
     }
-    action int_set_header_2() { //hop_latency
+
+    action int_set_header_2() { // set the hop latency metadata
         hdr.int_hop_latency.setValid();
-        hdr.int_hop_latency.hop_latency =
-        (bit<32>) standard_metadata.deq_timedelta;
+        hdr.int_hop_latency.hop_latency = (bit<32>) standard_metadata.deq_timedelta;
     }
     action int_set_header_3() { //q_occupancy
         // TODO: Support egress queue ID
@@ -293,6 +399,23 @@ control process_int_transit (
         tb_int_insert.apply();
         tb_int_inst_0003.apply();
         tb_int_inst_0407.apply();
+/*      apply select (hop_latency_sampling_mode) {
+            INT : hop_latency_sampling_deviation.apply(hdr, local_metadata, standard_metadata);
+        }*/
+        bit<4> hop_latency_sampling_mode;
+        hop_latency_sampling_mode_reg.read(hop_latency_sampling_mode,0);
+        
+        if (hop_latency_sampling_mode==INT) {
+            // original INT
+        } else if ((bit<4>) hop_latency_sampling_mode==(bit<4>) DEVIATION) {
+            hop_latency_sampling_deviation.apply(hdr, local_metadata, standard_metadata);
+        } else if (hop_latency_sampling_mode==DEVIATION_MA) {
+            hop_latency_sampling_deviation_ma.apply(hdr, local_metadata, standard_metadata);
+        } else if (hop_latency_sampling_mode==SAMPLEVALUE) {
+            hop_latency_sampling_samplevalue.apply(hdr, local_metadata, standard_metadata);
+        } else if (hop_latency_sampling_mode== SAMPLEVALUE_MA) {
+            hop_latency_sampling_samplevalue_ma.apply(hdr, local_metadata, standard_metadata);
+        }
         int_update_total_hop_cnt();
     }
 }

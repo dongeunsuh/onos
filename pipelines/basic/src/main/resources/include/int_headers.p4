@@ -123,6 +123,7 @@ struct local_metadata_t {
     next_hop_id_t next_hop_id;
     bit<16>       selector;
     int_metadata_t int_meta;
+    bit<32>       flow_hash; // flow hash added for DS-INT
 }
 
 #endif
