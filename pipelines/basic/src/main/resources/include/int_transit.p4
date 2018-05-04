@@ -80,13 +80,14 @@ control hop_latency_sampling_deviation (
 
 
 
-        action set_omittence_information() {
+        action set_omittance_information() {
               // update insert_byte_count and set omittence infomration (hop index, metadata type)
               local_metadata.int_meta.insert_byte_cnt = local_metadata.int_meta.insert_byte_cnt - 4;
               // set omittence information
-              hdr.int_header.omittence_hop_index = hdr.int_header.total_hop_cnt;
-              hdr.int_header.omittence_instruction_mask = 0b00100000;
+              hdr.int_header.omittance_hop_index = hdr.int_header.total_hop_cnt-1;
+              hdr.int_header.omittance_instruction_mask = 0b00100000;
         }
+
         apply {
             if (hdr.int_hop_latency.isValid()) {
                 /* invalidate the hop latency field
@@ -106,7 +107,7 @@ control hop_latency_sampling_deviation (
                     calculate_hop_latency_deviation();
                     if (local_metadata.hop_latency_deviation <=
                         local_metadata.dsint_hop_latency_deviation_threshold){
-                        set_omittence_information();
+                        set_omittance_information();
                     } else {
                         hdr.int_hop_latency.setValid();
                         hdr.int_hop_latency.hop_latency =
@@ -117,6 +118,7 @@ control hop_latency_sampling_deviation (
             }
         }
     }
+
 
 control hop_latency_sampling_deviation_ma (
     inout headers_t hdr,
@@ -440,9 +442,8 @@ control process_int_transit (
         tb_int_insert.apply();
         tb_int_inst_0003.apply();
         tb_int_inst_0407.apply();
-        int_update_total_hop_cnt();
-
         read_hop_latency_sampling_mode();
+        int_update_total_hop_cnt();
         if (local_metadata.hop_latency_sampling_mode==INT) {
             // original INT
         } else if (local_metadata.hop_latency_sampling_mode== DEVIATION) {
@@ -456,6 +457,9 @@ control process_int_transit (
         }
     }
 }
+
+
+
 
 control process_int_outer_encap (
     inout headers_t hdr,

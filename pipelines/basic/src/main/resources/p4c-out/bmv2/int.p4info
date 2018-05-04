@@ -458,9 +458,9 @@ actions {
 }
 actions {
   preamble {
-    id: 16797227
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.set_omittence_information"
-    alias: "set_omittence_information"
+    id: 16833797
+    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.set_omittance_information"
+    alias: "set_omittance_information"
   }
 }
 actions {

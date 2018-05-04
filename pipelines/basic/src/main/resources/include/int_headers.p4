@@ -33,8 +33,8 @@ header int_header_t {
     bit<4>  instruction_mask_0811;
     bit<4>  instruction_mask_1215;
     //bit<16> rsvd2;
-    bit<8>  omittence_hop_index;
-    bit<8>  omittence_instruction_mask;
+    bit<8>  omittance_hop_index;
+    bit<8>  omittance_instruction_mask;
 }
 
 // INT meta-value headers - different header for each value type
