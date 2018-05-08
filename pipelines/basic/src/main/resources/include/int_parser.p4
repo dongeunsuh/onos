@@ -112,6 +112,7 @@ control int_deparser(
         packet.emit(hdr.udp);
         packet.emit(hdr.intl4_shim);
         packet.emit(hdr.int_header);
+        packet.emit(hdr.int_insertion_bitmap); // sub instruction mask for FS=INT
         packet.emit(hdr.int_switch_id);
         packet.emit(hdr.int_port_ids);
         packet.emit(hdr.int_hop_latency);

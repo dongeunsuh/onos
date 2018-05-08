@@ -19,6 +19,9 @@
 #define __INT_SOURCE__
 
 // Insert INT header to the packet
+
+
+
 control process_int_source (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
@@ -46,7 +49,8 @@ control process_int_source (
         hdr.int_header.instruction_mask_0003 = ins_mask0003;
         hdr.int_header.instruction_mask_0407 = ins_mask0407;
         hdr.int_header.instruction_mask_0811 = 0; // not supported
-        hdr.int_header.instruction_mask_1215 = 0; // not supported
+        hdr.int_header.instruction_mask_1214 = 0; // not supported
+        hdr.int_header.event_based_mode_1515 = local_metadata.event_based_activated;
 
         // insert INT tail header
         hdr.intl4_tail.setValid();

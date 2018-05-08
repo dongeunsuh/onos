@@ -20,27 +20,34 @@
 
 const bit<32> FLOW_NUM = 0xFFFFFFFF;
 
-const bit<4> INT = 0x0;
 const bit<4> DEVIATION = 0x1;
-const bit<4> DEVIATION_MA = 0x2;
-const bit<4> SAMPLEVALUE = 0x3;
-const bit<4> SAMPLEVALUE_MA = 0x4;
+const bit<4> VALUE = 0x2;
+const bit<4> DEVIATION_MA = 0x3;
+const bit<4> VALUE_MA = 0x4;
 
+/*
 register<bit<4>>(1) hop_latency_sampling_mode_reg;
-/* Resgister variables for the latest sample values in DS-INT */
 register<bit<32>>(FLOW_NUM) dsint_hop_latency_latest_reg;
-/* Register variable for hop latency sampling threshold in DS-INT */
 register<bit<32>>(1) dsint_hop_latency_threshold_reg;
+*/
+
+
+register<bit<4>>(1) lat_sampling_criteria_reg;
+
+
+
+register<bit<32>>(FLOW_NUM) latest_lat_dev_reg;
+register<bit<32>>(1) lat_dev_threshold_reg;
+
 
 
 // control function that excecutes distributed sampling for the hop latency
-control hop_latency_sampling_deviation (
+control lat_dev_based (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
     inout standard_metadata_t standard_metadata) {
 
-
-        action dsint_calculate_flow_hash(){
+        action calc_flow_hash(){
             hash(
                   local_metadata.flow_hash,
                   HashAlgorithm.crc32,
@@ -52,30 +59,30 @@ control hop_latency_sampling_deviation (
                     local_metadata.l4_dst_port },
                     FLOW_NUM);
         }
-        table tb_dsint_calculate_flow_hash {
+        table tb_calc_flow_hash {
             key = {
                 hdr.ipv4.isValid():exact;
             }
             actions = {
-                dsint_calculate_flow_hash();
+                calc_flow_hash();
             }
             const entries = {
-                (true) : dsint_calculate_flow_hash();
+                (true) : calc_flow_hash();
             }
         }
-        action read_hop_latency_deviation_threshold(){
-            dsint_hop_latency_threshold_reg.read(local_metadata.dsint_hop_latency_deviation_threshold,32w0);
+        action read_lat_dev_threshold(){
+            lat_dev_threshold_reg.read(local_metadata.lat_dev_threshold,32w0);
         }
-        action read_hop_latency_latest(){
-            dsint_hop_latency_latest_reg.read(local_metadata.dsint_hop_latency_latest, (bit<32>)local_metadata.flow_hash);
+        action read_latest_lat_dev(){
+            latest_lat_dev_reg.read(local_metadata.latest_lat_dev, (bit<32>)local_metadata.flow_hash);
         }
-        action update_hop_latency_latest(){
-            dsint_hop_latency_latest_reg.write((bit<32>)local_metadata.flow_hash, (bit<32>)hdr.int_hop_latency.hop_latency);
+        action update_latest_lat(){
+            latest_lat_dev_reg.write((bit<32>)local_metadata.flow_hash, (bit<32>)hdr.int_hop_latency.hop_latency);
         }
-        action calculate_hop_latency_deviation(){
-            local_metadata.hop_latency_deviation = (bit<32>) standard_metadata.deq_timedelta - local_metadata.dsint_hop_latency_latest;
-            bit<32> mask = local_metadata.hop_latency_deviation >> 31;
-            local_metadata.hop_latency_deviation = (local_metadata.hop_latency_deviation ^ mask) - mask; // absolute value of the latency deviation
+        action calc_cur_lat_dev(){
+            local_metadata.cur_lat_dev = (bit<32>) standard_metadata.deq_timedelta - local_metadata.latest_lat_dev;
+            bit<32> mask = local_metadata.cur_lat_dev >> 31;
+            local_metadata.cur_lat_dev = (local_metadata.cur_lat_dev ^ mask) - mask; // absolute value of the latency deviation
         }
 
 
@@ -93,26 +100,26 @@ control hop_latency_sampling_deviation (
                 /* invalidate the hop latency field
                 inserted by the original INT */
                 hdr.int_hop_latency.setInvalid();
-                tb_dsint_calculate_flow_hash.apply();
-                read_hop_latency_deviation_threshold();
-                read_hop_latency_latest();
+                tb_calc_flow_hash.apply();
+                read_lat_dev_threshold();
+                read_latest_lat_dev();
 
                 /* deviation-based sampling for hop latency */
-                if (local_metadata.dsint_hop_latency_latest == 32w0){
+                if (local_metadata.latest_lat_dev == 32w0){
                     hdr.int_hop_latency.setValid();
                     hdr.int_hop_latency.hop_latency =
                     (bit<32>) standard_metadata.deq_timedelta;
-                    update_hop_latency_latest();
+                    update_latest_lat();
                 } else {
-                    calculate_hop_latency_deviation();
-                    if (local_metadata.hop_latency_deviation <=
-                        local_metadata.dsint_hop_latency_deviation_threshold){
+                    calc_cur_lat_dev();
+                    if (local_metadata.cur_lat_dev <=
+                        local_metadata.lat_dev_threshold){
                         set_omittance_information();
                     } else {
                         hdr.int_hop_latency.setValid();
                         hdr.int_hop_latency.hop_latency =
                         (bit<32>) standard_metadata.deq_timedelta;
-                        update_hop_latency_latest();
+                        update_latest_lat();
                     }
                 }
             }
@@ -128,7 +135,7 @@ control hop_latency_sampling_deviation_ma (
 
     }
 }
-control hop_latency_sampling_samplevalue (
+control lat_val_based (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
     inout standard_metadata_t standard_metadata) {
@@ -147,6 +154,32 @@ control hop_latency_sampling_samplevalue_ma (
 }
 
 
+
+control update_insert_bitmap (
+    inout headers_t hdr,
+    inout local_metadata_t local_metadata,
+    inout standard_metadata_t standard_metadata) {
+      apply{
+           if (hdr.int_switch_id.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b100000000000000;
+            } else if (hdr.int_port_ids.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b010000000000000;
+            } else if (hdr.int_hop_latency.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b001000000000000;
+            } else if (hdr.int_q_occupancy.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b000100000000000;
+            } else if (hdr.int_ingress_tstamp.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b000010000000000;
+            } else if (hdr.int_egress_tstamp.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b000001000000000;
+            } else if (hdr.int_q_congestion.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b0000001000000000;
+            } else if (hdr.int_egress_tx_util.isValid()) {
+                local_metadata.insertion_bitmap = local_metadata.insertion_bitmap + 0b0000000100000000;
+            }
+    }
+}
+
 control process_int_transit (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
@@ -157,8 +190,8 @@ control process_int_transit (
     direct_counter(CounterType.packets_and_bytes) counter_int_inst_0407;
 
 
-    action read_hop_latency_sampling_mode() {
-        hop_latency_sampling_mode_reg.read(local_metadata.hop_latency_sampling_mode,32w0);
+    action read_lat_criteria() {
+        lat_sampling_criteria_reg.read(local_metadata.lat_criteria,32w0);
     }
 
     /* Resister variable for DS-INT mode. If set, excecute DS-INT, otherwise, execute original INT. */
@@ -228,6 +261,12 @@ control process_int_transit (
         hdr.int_egress_tx_util.egress_port_tx_util =
         // (bit<32>) queueing_metadata.tx_utilization;
         0;
+    }
+
+    action int_set_header_15() { //insertion bitmap
+        hdr.int_insertion_bitmap.setValid();
+        hdr.int_insertion_bitmap.insertion_bitmap =
+        local_metadata.insertion_bitmap;
     }
 
     /* action function for bits 0-3 combinations, 0 is msb, 3 is lsb */
@@ -437,29 +476,45 @@ control process_int_transit (
         }
     }*/
 
+    table tb_insert_bitmap {
+        key = {
+            hdr.int_header.event_based_mode_1515 : exact;
+        }
+        actions = {
+            int_set_header_15();
+        }
+        const entries = {
+            (1) : int_set_header_15();
+        }
+    }
 
     apply {
         tb_int_insert.apply();
         tb_int_inst_0003.apply();
         tb_int_inst_0407.apply();
-        read_hop_latency_sampling_mode();
         int_update_total_hop_cnt();
-        if (local_metadata.hop_latency_sampling_mode==INT) {
-            // original INT
-        } else if (local_metadata.hop_latency_sampling_mode== DEVIATION) {
-            hop_latency_sampling_deviation.apply(hdr, local_metadata, standard_metadata);
-        } else if (local_metadata.hop_latency_sampling_mode==DEVIATION_MA) {
-            hop_latency_sampling_deviation_ma.apply(hdr, local_metadata, standard_metadata);
-        } else if (local_metadata.hop_latency_sampling_mode==SAMPLEVALUE) {
-            hop_latency_sampling_samplevalue.apply(hdr, local_metadata, standard_metadata);
-        } else if (local_metadata.hop_latency_sampling_mode== SAMPLEVALUE_MA) {
-            hop_latency_sampling_samplevalue_ma.apply(hdr, local_metadata, standard_metadata);
+
+        read_lat_criteria();
+        if (local_metadata.lat_criteria== DEVIATION) {
+            lat_dev_based.apply(hdr, local_metadata, standard_metadata);
+        } else if (local_metadata.lat_criteria==VALUE) {
+            lat_val_based.apply(hdr, local_metadata, standard_metadata);
         }
+
+        update_insert_bitmap.apply(hdr, local_metadata, standard_metadata);
+        tb_insert_bitmap.apply();
     }
 }
 
 
-
+    /*int_switch_id_t int_switch_id;
+    int_port_ids_t int_port_ids;
+    int_hop_latency_t int_hop_latency;
+    int_q_occupancy_t int_q_occupancy;
+    int_ingress_tstamp_t int_ingress_tstamp;
+    int_egress_tstamp_t int_egress_tstamp;
+    int_q_congestion_t int_q_congestion;
+    int_egress_port_tx_util_t int_egress_tx_util;*/
 
 control process_int_outer_encap (
     inout headers_t hdr,

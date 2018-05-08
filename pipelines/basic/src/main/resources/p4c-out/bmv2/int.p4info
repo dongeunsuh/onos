@@ -159,9 +159,9 @@ tables {
 }
 tables {
   preamble {
-    id: 33581224
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.tb_dsint_calculate_flow_hash"
-    alias: "tb_dsint_calculate_flow_hash"
+    id: 33569013
+    name: "int_egress.process_int_transit.lat_dev_based.tb_calc_flow_hash"
+    alias: "tb_calc_flow_hash"
   }
   match_fields {
     id: 1
@@ -170,7 +170,7 @@ tables {
     match_type: EXACT
   }
   action_refs {
-    id: 16818509
+    id: 16828128
   }
   action_refs {
     id: 16800567
@@ -335,6 +335,28 @@ tables {
   direct_resource_ids: 302021733
   size: 16
 }
+tables {
+  preamble {
+    id: 33607929
+    name: "int_egress.process_int_transit.tb_insert_bitmap"
+    alias: "tb_insert_bitmap"
+  }
+  match_fields {
+    id: 1
+    name: "hdr.int_header.event_based_mode_1515"
+    bitwidth: 1
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16805652
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly()"
+  }
+  size: 1024
+  is_const_table: true
+}
 actions {
   preamble {
     id: 16794308
@@ -423,51 +445,51 @@ actions {
 }
 actions {
   preamble {
-    id: 16818509
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.dsint_calculate_flow_hash"
-    alias: "dsint_calculate_flow_hash"
+    id: 16828128
+    name: "int_egress.process_int_transit.lat_dev_based.calc_flow_hash"
+    alias: "calc_flow_hash"
   }
 }
 actions {
   preamble {
-    id: 16821498
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.read_hop_latency_deviation_threshold"
-    alias: "read_hop_latency_deviation_threshold"
+    id: 16808249
+    name: "int_egress.process_int_transit.lat_dev_based.read_lat_dev_threshold"
+    alias: "read_lat_dev_threshold"
   }
 }
 actions {
   preamble {
-    id: 16798340
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.read_hop_latency_latest"
-    alias: "read_hop_latency_latest"
+    id: 16824438
+    name: "int_egress.process_int_transit.lat_dev_based.read_latest_lat_dev"
+    alias: "read_latest_lat_dev"
   }
 }
 actions {
   preamble {
-    id: 16839586
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.update_hop_latency_latest"
-    alias: "update_hop_latency_latest"
+    id: 16779059
+    name: "int_egress.process_int_transit.lat_dev_based.update_latest_lat"
+    alias: "update_latest_lat"
   }
 }
 actions {
   preamble {
-    id: 16782595
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.calculate_hop_latency_deviation"
-    alias: "calculate_hop_latency_deviation"
+    id: 16810608
+    name: "int_egress.process_int_transit.lat_dev_based.calc_cur_lat_dev"
+    alias: "calc_cur_lat_dev"
   }
 }
 actions {
   preamble {
-    id: 16833797
-    name: "int_egress.process_int_transit.hop_latency_sampling_deviation.set_omittance_information"
+    id: 16782563
+    name: "int_egress.process_int_transit.lat_dev_based.set_omittance_information"
     alias: "set_omittance_information"
   }
 }
 actions {
   preamble {
-    id: 16818285
-    name: "int_egress.process_int_transit.read_hop_latency_sampling_mode"
-    alias: "read_hop_latency_sampling_mode"
+    id: 16821268
+    name: "int_egress.process_int_transit.read_lat_criteria"
+    alias: "read_lat_criteria"
   }
 }
 actions {
@@ -487,6 +509,13 @@ actions {
     id: 1
     name: "switch_id"
     bitwidth: 32
+  }
+}
+actions {
+  preamble {
+    id: 16805652
+    name: "int_egress.process_int_transit.int_set_header_15"
+    alias: "int_set_header_15"
   }
 }
 actions {
@@ -746,6 +775,34 @@ actions {
     id: 16827579
     name: "int_egress.process_int_sink.int_sink"
     alias: "int_sink"
+  }
+}
+actions {
+  preamble {
+    id: 16813390
+    name: "int_egress.read_sampling_strategy"
+    alias: "read_sampling_strategy"
+  }
+}
+actions {
+  preamble {
+    id: 16819984
+    name: "int_egress.initialize_temp_counter"
+    alias: "initialize_temp_counter"
+  }
+}
+actions {
+  preamble {
+    id: 16788116
+    name: "int_egress.read_temp_counter"
+    alias: "read_temp_counter"
+  }
+}
+actions {
+  preamble {
+    id: 16777779
+    name: "int_egress.decrease_temp_counter"
+    alias: "decrease_temp_counter"
   }
 }
 counters {

@@ -31,7 +31,8 @@ header int_header_t {
     bit<4>  instruction_mask_0003; /* split the bits for lookup */
     bit<4>  instruction_mask_0407;
     bit<4>  instruction_mask_0811;
-    bit<4>  instruction_mask_1215;
+    bit<3>  instruction_mask_1214;
+    bit<1>  event_based_mode_1515;
     //bit<16> rsvd2;
     bit<8>  omittance_hop_index;
     bit<8>  omittance_instruction_mask;
@@ -64,6 +65,11 @@ header int_q_congestion_t {
 }
 header int_egress_port_tx_util_t {
     bit<32> egress_port_tx_util;
+}
+
+header int_insertion_bitmap_t {
+    bit<15>  insertion_bitmap; // sub instruction bitmap for FS-INT
+    bit<17>  rsvd;
 }
 
 header int_data_t {
@@ -108,6 +114,7 @@ struct headers_t {
     intl4_shim_t intl4_shim;
     int_header_t int_header;
     int_data_t int_data;
+    int_insertion_bitmap_t int_insertion_bitmap; // sub instruction bitmap for FS-INT
     int_switch_id_t int_switch_id;
     int_port_ids_t int_port_ids;
     int_hop_latency_t int_hop_latency;
@@ -126,10 +133,16 @@ struct local_metadata_t {
     bit<16>       selector;
     int_metadata_t int_meta;
     bit<32>       flow_hash; // flow hash added for DS-INT
-    bit<4> hop_latency_sampling_mode; // sampling mode added for DS-INT
-    bit<32> hop_latency_deviation;
-    bit<32> dsint_hop_latency_deviation_threshold;
-    bit<32> dsint_hop_latency_latest;
+    bit<4> lat_criteria; // sampling mode added for DS-INT
+    bit<32> cur_lat_dev;
+    bit<32> lat_dev_threshold;
+    bit<32> latest_lat_dev;
+    bit<4> sampling_strategy;
+    int<32> temp_counter;
+    bit<1> event_based_activated;
+    bit<15> insertion_bitmap;
+
+
 }
 
 #endif
