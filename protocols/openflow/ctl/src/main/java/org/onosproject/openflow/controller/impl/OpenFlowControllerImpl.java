@@ -28,10 +28,14 @@ import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.core.CoreService;
-import org.onosproject.net.device.DeviceEvent;
-import org.onosproject.net.device.DeviceListener;
-import org.onosproject.net.device.DeviceService;
+import org.onosproject.net.DeviceId;
+import org.onosproject.net.config.ConfigFactory;
+import org.onosproject.net.config.NetworkConfigEvent;
+import org.onosproject.net.config.NetworkConfigListener;
+import org.onosproject.net.config.NetworkConfigRegistry;
+import org.onosproject.net.config.basics.SubjectFactories;
 import org.onosproject.net.driver.DriverService;
+import org.onosproject.openflow.config.OpenFlowDeviceConfig;
 import org.onosproject.openflow.controller.DefaultOpenFlowPacketContext;
 import org.onosproject.openflow.controller.Dpid;
 import org.onosproject.openflow.controller.OpenFlowController;
@@ -77,7 +81,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -89,9 +93,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static org.onlab.util.Tools.groupedThreads;
-import static org.onosproject.net.Device.Type.CONTROLLER;
-import static org.onosproject.net.device.DeviceEvent.Type.DEVICE_REMOVED;
-import static org.onosproject.openflow.controller.Dpid.dpid;
 
 
 @Component(immediate = true)
@@ -115,8 +116,7 @@ public class OpenFlowControllerImpl implements OpenFlowController {
     protected ComponentConfigService cfgService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
-    protected DeviceService deviceService;
-
+    protected NetworkConfigRegistry netCfgService;
 
     @Property(name = "openflowPorts", value = DEFAULT_OFPORT,
             label = "Port numbers (comma separated) used by OpenFlow protocol; default is 6633,6653")
@@ -125,6 +125,26 @@ public class OpenFlowControllerImpl implements OpenFlowController {
     @Property(name = "workerThreads", intValue = DEFAULT_WORKER_THREADS,
             label = "Number of controller worker threads")
     private int workerThreads = DEFAULT_WORKER_THREADS;
+
+    @Property(name = "tlsMode", value = "",
+              label = "TLS mode for OpenFlow channel; options are: disabled [default], enabled, strict")
+    private String tlsModeString;
+
+    @Property(name = "keyStore", value = "",
+            label = "File path to key store for TLS connections")
+    private String keyStore;
+
+    @Property(name = "keyStorePassword", value = "",
+            label = "Key store password")
+    private String keyStorePassword;
+
+    @Property(name = "trustStore", value = "",
+            label = "File path to trust store for TLS connections")
+    private String trustStore;
+
+    @Property(name = "trustStorePassword", value = "",
+            label = "Trust store password")
+    private String trustStorePassword;
 
     protected ExecutorService executorMsgs =
         Executors.newFixedThreadPool(32, groupedThreads("onos/of", "event-stats-%d", log));
@@ -184,16 +204,68 @@ public class OpenFlowControllerImpl implements OpenFlowController {
     protected Multimap<Dpid, OFQueueStatsEntry> fullQueueStats =
             ArrayListMultimap.create();
 
+    protected final ConfigFactory factory =
+            new ConfigFactory<DeviceId, OpenFlowDeviceConfig>(
+                    SubjectFactories.DEVICE_SUBJECT_FACTORY,
+                    OpenFlowDeviceConfig.class, OpenFlowDeviceConfig.CONFIG_KEY) {
+                @Override
+                public OpenFlowDeviceConfig createConfig() {
+                    return new OpenFlowDeviceConfig();
+                }
+            };
+
     private final Controller ctrl = new Controller();
-    private InternalDeviceListener listener = new InternalDeviceListener();
+
+    private final NetworkConfigListener netCfgListener = new NetworkConfigListener() {
+        @Override
+        public boolean isRelevant(NetworkConfigEvent event) {
+            return OpenFlowDeviceConfig.class.equals(event.configClass());
+        }
+
+        @Override
+        public void event(NetworkConfigEvent event) {
+            // We only receive NetworkConfigEvents
+            OpenFlowDeviceConfig prevConfig = null;
+            if (event.prevConfig().isPresent()) {
+                prevConfig = (OpenFlowDeviceConfig) event.prevConfig().get();
+            }
+
+            OpenFlowDeviceConfig newConfig = null;
+            if (event.config().isPresent()) {
+                newConfig = (OpenFlowDeviceConfig) event.config().get();
+            }
+
+            boolean closeConnection = false;
+            if (prevConfig != null && newConfig != null) {
+                if (!Objects.equals(prevConfig.keyAlias(), newConfig.keyAlias())) {
+                    closeConnection = true;
+                }
+            } else if (prevConfig != null) {
+                // config was removed
+                closeConnection = true;
+            }
+            if (closeConnection) {
+                if (event.subject() instanceof DeviceId) {
+                    DeviceId deviceId = (DeviceId) event.subject();
+                    Dpid dpid = Dpid.dpid(deviceId.uri());
+                    OpenFlowSwitch sw = getSwitch(dpid);
+                    if (sw != null && ctrl.tlsParams.mode == Controller.TlsMode.STRICT) {
+                        sw.disconnectSwitch();
+                        log.info("Disconnecting switch {} because key has been updated or removed", dpid);
+                    }
+                }
+            }
+        }
+    };
 
     @Activate
     public void activate(ComponentContext context) {
         coreService.registerApplication(APP_ID, this::cleanup);
         cfgService.registerProperties(getClass());
-        deviceService.addListener(listener);
+        netCfgService.registerConfigFactory(factory);
+        netCfgService.addListener(netCfgListener);
         ctrl.setConfigParams(context.getProperties());
-        ctrl.start(agent, driverService);
+        ctrl.start(agent, driverService, netCfgService);
     }
 
     private void cleanup() {
@@ -208,16 +280,15 @@ public class OpenFlowControllerImpl implements OpenFlowController {
 
     @Deactivate
     public void deactivate() {
-        deviceService.removeListener(listener);
         cleanup();
         cfgService.unregisterProperties(getClass(), false);
+        netCfgService.removeListener(netCfgListener);
+        netCfgService.unregisterConfigFactory(factory);
     }
 
     @Modified
     public void modified(ComponentContext context) {
-        ctrl.stop();
         ctrl.setConfigParams(context.getProperties());
-        ctrl.start(agent, driverService);
     }
 
     @Override
@@ -605,47 +676,6 @@ public class OpenFlowControllerImpl implements OpenFlowController {
             return;
         }
         sw.setRole(role);
-    }
-
-    class InternalDeviceListener implements DeviceListener {
-
-        @Override
-        public boolean isRelevant(DeviceEvent event) {
-            return event.subject().type() != CONTROLLER && event.type() == DEVICE_REMOVED
-                    && event.subject().id().uri().getScheme().equals(SCHEME);
-        }
-
-        @Override
-        public void event(DeviceEvent event) {
-            switch (event.type()) {
-            case DEVICE_ADDED:
-                break;
-            case DEVICE_AVAILABILITY_CHANGED:
-                break;
-            case DEVICE_REMOVED:
-                // Device administratively removed, disconnect
-                Optional.ofNullable(getSwitch(dpid(event.subject().id().uri())))
-                        .ifPresent(OpenFlowSwitch::disconnectSwitch);
-                break;
-            case DEVICE_SUSPENDED:
-                break;
-            case DEVICE_UPDATED:
-                break;
-            case PORT_ADDED:
-                break;
-            case PORT_REMOVED:
-                break;
-            case PORT_STATS_UPDATED:
-                break;
-            case PORT_UPDATED:
-                break;
-            default:
-                break;
-
-            }
-
-        }
-
     }
 
     /**

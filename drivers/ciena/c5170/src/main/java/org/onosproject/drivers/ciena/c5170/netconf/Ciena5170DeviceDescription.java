@@ -64,7 +64,7 @@ import org.w3c.dom.NodeList;
  */
 public class Ciena5170DeviceDescription extends AbstractHandlerBehaviour
         implements DeviceDescriptionDiscovery, PortStatisticsDiscovery, LinkDiscovery {
-    private static final TemplateManager TEMPLATE_MANAGER = new TemplateManager();
+    static final TemplateManager TEMPLATE_MANAGER = new TemplateManager();
 
     static {
         TEMPLATE_MANAGER.load(Ciena5170DeviceDescription.class, "/templates/requests/%s.j2", "systemInfo",
@@ -252,7 +252,8 @@ public class Ciena5170DeviceDescription extends AbstractHandlerBehaviour
                                                     "state/lldp-remote-port-operational/port-id/text()", iface))),
                                     Link.Type.DIRECT, true));
                         } else {
-                            log.error("DEST CHASSIS is NULL for {}", xp.evaluate("name/text()", iface));
+                            log.warn("DEST chassisID not found: chassis {} port {}",
+                                    destChassis.getTextContent().toUpperCase(), xp.evaluate("name/text()", iface));
                         }
                     } else {
                         log.debug("NO LINK for {}", xp.evaluate("name/text()", iface));

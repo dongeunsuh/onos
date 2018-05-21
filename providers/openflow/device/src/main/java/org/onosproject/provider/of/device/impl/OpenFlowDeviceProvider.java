@@ -55,6 +55,7 @@ import org.onosproject.net.device.DeviceDescription;
 import org.onosproject.net.device.DeviceProvider;
 import org.onosproject.net.device.DeviceProviderRegistry;
 import org.onosproject.net.device.DeviceProviderService;
+import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.device.PortDescription;
 import org.onosproject.net.device.PortStatistics;
 import org.onosproject.net.driver.Driver;
@@ -121,6 +122,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -426,9 +428,13 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
     private static final Frequency FREQ4_4 = Frequency.ofGHz(4_400);
 
     private static final long C = 299792458; // speed of light in m/s
+    public static final String SCHEME = "of";
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected DeviceProviderRegistry providerRegistry;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
+    protected DeviceService deviceService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY_UNARY)
     protected OpenFlowController controller;
@@ -457,13 +463,13 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
 
     private final Timer timer = new Timer("onos-openflow-portstats-collector");
 
-    private HashMap<Dpid, PortStatsCollector> collectors = Maps.newHashMap();
+    private Map<Dpid, PortStatsCollector> collectors = Maps.newConcurrentMap();
 
     /**
      * Creates an OpenFlow device provider.
      */
     public OpenFlowDeviceProvider() {
-        super(new ProviderId("of", "org.onosproject.provider.openflow"));
+        super(new ProviderId(SCHEME, "org.onosproject.provider.openflow"));
     }
 
     @Activate
@@ -607,6 +613,18 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
             }
         }
         sw.sendMsg(Collections.singletonList(pmb.build()));
+    }
+
+    @Override
+    public void triggerDisconnect(DeviceId deviceId) {
+        Dpid dpid = dpid(deviceId.uri());
+        OpenFlowSwitch sw = controller.getSwitch(dpid);
+        if (sw != null) {
+            LOG.debug("Forcing disconnect for device {}", deviceId);
+            // TODO: Further consolidate clean-up on device disconnect
+            listener.switchRemoved(dpid);
+            sw.disconnectSwitch();
+        }
     }
 
     private void pushPortMetrics(Dpid dpid, List<OFPortStatsEntry> portStatsEntries) {
@@ -1519,6 +1537,5 @@ public class OpenFlowDeviceProvider extends AbstractProvider implements DevicePr
             isDisabled = true;
         }
     }
-
 
 }

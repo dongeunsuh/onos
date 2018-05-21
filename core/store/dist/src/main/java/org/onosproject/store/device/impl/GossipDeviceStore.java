@@ -328,6 +328,7 @@ public class GossipDeviceStore
         log.debug("Notifying peers of a device update topology event for providerId: {} and deviceId: {}",
                 providerId, deviceId);
         notifyPeers(new InternalDeviceEvent(providerId, deviceId, mergedDesc));
+        notifyDelegateIfNotNull(deviceEvent);
 
         return deviceEvent;
     }
@@ -362,6 +363,7 @@ public class GossipDeviceStore
                 // outdated event, ignored.
                 return null;
             }
+
             if (oldDevice == null) {
                 // REGISTER
                 if (!deltaDesc.value().isDefaultAvailable()) {
@@ -486,6 +488,9 @@ public class GossipDeviceStore
 
             Device device = devices.get(deviceId);
             if (device == null) {
+                // Single Instance ONOS, device is removed from devices map and is null here but
+                // must still be marked offline
+                availableDevices.remove(deviceId);
                 return null;
             }
             boolean removed = availableDevices.remove(deviceId);
@@ -538,8 +543,9 @@ public class GossipDeviceStore
                     }
                 }
             }
+        } else {
+            log.warn("Device {} does not exist in store", deviceId);
         }
-        log.warn("Device {} does not exist in store", deviceId);
         return null;
     }
 
@@ -1058,6 +1064,7 @@ public class GossipDeviceStore
             log.debug("Notifying peers of a device removed topology event for deviceId: {}",
                       deviceId);
             notifyPeers(new InternalDeviceRemovedEvent(deviceId, timestamp));
+            notifyDelegateIfNotNull(event);
         }
 
         // Relinquish mastership if acquired to remove the device.
@@ -1164,7 +1171,7 @@ public class GossipDeviceStore
 
         return new DefaultDevice(primary, deviceId, type, manufacturer,
                                  hwVersion, swVersion, serialNumber,
-                                 chassisId, annotations.build());
+                                 chassisId, annotations.buildCompressed());
     }
 
     private Port buildTypedPort(Device device, PortNumber number, boolean isEnabled,

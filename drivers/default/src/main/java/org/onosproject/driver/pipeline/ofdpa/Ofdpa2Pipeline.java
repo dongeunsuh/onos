@@ -284,6 +284,15 @@ public class Ofdpa2Pipeline extends AbstractHandlerBehaviour implements Pipeline
         return false;
     }
 
+    /**
+     * Determines whether this driver supports installing a clearDeferred action on table 30.
+     *
+     * @return true if required
+     */
+    protected boolean supportsUnicastBlackHole() {
+        return true;
+    }
+
     //////////////////////////////////////
     //  Flow Objectives
     //////////////////////////////////////
@@ -502,7 +511,7 @@ public class Ofdpa2Pipeline extends AbstractHandlerBehaviour implements Pipeline
 
         if (ethCriterion == null || ethCriterion.mac().equals(NONE)) {
             // NOTE: it is possible that a filtering objective only has vidCriterion
-            log.warn("filtering objective missing dstMac, cannot program TMAC table");
+            log.debug("filtering objective missing dstMac, won't program TMAC table");
         } else {
             MacAddress unicastMac = readEthDstFromTreatment(filt.meta());
             List<List<FlowRule>> allStages = processEthDstFilter(portCriterion, ethCriterion,
@@ -1460,6 +1469,15 @@ public class Ofdpa2Pipeline extends AbstractHandlerBehaviour implements Pipeline
             tb.transition(mplsNextTable);
         } else {
             tb.transition(ACL_TABLE);
+        }
+
+        if (fwd.treatment() != null && fwd.treatment().clearedDeferred()) {
+            if (supportsUnicastBlackHole()) {
+                tb.wipeDeferred();
+            } else {
+                log.warn("Clear Deferred is not supported Unicast Routing Table on device {}", deviceId);
+                return Collections.emptySet();
+            }
         }
 
         FlowRule.Builder ruleBuilder = DefaultFlowRule.builder()

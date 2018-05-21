@@ -79,6 +79,7 @@ CORE = UTILS + API + [
     '//providers/p4runtime/packet:onos-providers-p4runtime-packet',
 
     '//web/api:onos-rest',
+    '//web/gui2:onos-gui2',
     '//web/gui:onos-gui',
 
     '//incubator/protobuf/models:onos-incubator-protobuf-models',
@@ -94,7 +95,7 @@ ONOS_DRIVERS = [
     '//drivers/ciena/waveserver:onos-drivers-ciena-waveserver-oar',
     '//drivers/ciena/c5162:onos-drivers-ciena-c5162-oar',
     '//drivers/ciena/c5170:onos-drivers-ciena-c5170-oar',
-    # TODO in-progress '//drivers/ciena/waveserverai:onos-drivers-ciena-waveserverai-oar',
+    '//drivers/ciena/waveserverai:onos-drivers-ciena-waveserverai-oar',
     '//drivers/cisco/netconf:onos-drivers-cisco-netconf-oar',
     '//drivers/cisco/rest:onos-drivers-cisco-rest-oar',
     '//drivers/corsa:onos-drivers-corsa-oar',
@@ -118,6 +119,7 @@ ONOS_DRIVERS = [
     '//drivers/gnmi:onos-drivers-gnmi-oar',
     '//drivers/polatis/netconf:onos-drivers-polatis-netconf-oar',
     '//drivers/polatis/openflow:onos-drivers-polatis-openflow-oar',
+    '//drivers/odtn-driver:onos-drivers-odtn-driver-oar',
 ]
 
 ONOS_PROVIDERS = [
@@ -244,10 +246,13 @@ ONOS_APPS = [
     '//apps/simplefabric:onos-apps-simplefabric-oar',
     '//apps/kafka-integration:onos-apps-kafka-integration-oar',
     '//apps/rabbitmq:onos-apps-rabbitmq-oar',
-    '//apps/odtn:onos-apps-odtn-oar',
+    '//apps/odtn/api:onos-apps-odtn-api-oar',
+    '//apps/odtn/service:onos-apps-odtn-service-oar',
     '//apps/mcast:onos-apps-mcast-oar',
     '//apps/layout:onos-apps-layout-oar',
     '//apps/imr:onos-apps-imr-oar',
+    # nodemetrics application
+    '//apps/nodemetrics:onos-apps-nodemetrics-oar',
 ]
 
 PROTOCOL_APPS = [
@@ -259,14 +264,17 @@ PROTOCOL_APPS = [
 ]
 
 MODELS = [
+    '//models/ietf:onos-models-ietf-oar',
     '//models/common:onos-models-common-oar',
     '//models/huawei:onos-models-huawei-oar',
     '//models/openconfig:onos-models-openconfig-oar',
+    '//models/openconfig-infinera:onos-models-openconfig-infinera-oar',
     '//models/openroadm:onos-models-openroadm-oar',
     '//models/tapi:onos-models-tapi-oar',
     '//models/l3vpn:onos-models-l3vpn-oar',
     '//models/microsemi:onos-models-microsemi-oar',
     '//models/polatis:onos-models-polatis-oar',
+    '//models/ciena/waveserverai:onos-models-ciena-waveserverai-oar',
 ]
 
 PIPELINES = [
@@ -296,4 +304,3 @@ APP_JARS = [
 
 APPS = ONOS_DRIVERS + ONOS_PROVIDERS + ONOS_APPS + MODELS + PIPELINES \
         + PROTOCOL_APPS
-

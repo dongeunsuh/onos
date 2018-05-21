@@ -108,6 +108,7 @@ import org.onosproject.segmentrouting.grouphandler.DestinationSet;
 import org.onosproject.segmentrouting.grouphandler.NextNeighbors;
 import org.onosproject.segmentrouting.mcast.McastHandler;
 import org.onosproject.segmentrouting.mcast.McastRole;
+import org.onosproject.segmentrouting.mcast.McastRoleStoreKey;
 import org.onosproject.segmentrouting.pwaas.DefaultL2Tunnel;
 import org.onosproject.segmentrouting.pwaas.DefaultL2TunnelDescription;
 import org.onosproject.segmentrouting.pwaas.DefaultL2TunnelHandler;
@@ -120,7 +121,7 @@ import org.onosproject.segmentrouting.pwaas.L2TunnelDescription;
 
 import org.onosproject.segmentrouting.storekey.DestinationSetNextObjectiveStoreKey;
 import org.onosproject.segmentrouting.storekey.DummyVlanIdStoreKey;
-import org.onosproject.segmentrouting.storekey.McastStoreKey;
+import org.onosproject.segmentrouting.mcast.McastStoreKey;
 import org.onosproject.segmentrouting.storekey.PortNextObjectiveStoreKey;
 import org.onosproject.segmentrouting.storekey.VlanNextObjectiveStoreKey;
 import org.onosproject.segmentrouting.storekey.XConnectStoreKey;
@@ -145,6 +146,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -277,6 +279,7 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private ScheduledExecutorService hostEventExecutor;
     private ScheduledExecutorService routeEventExecutor;
     private ScheduledExecutorService mcastEventExecutor;
+    private ExecutorService packetExecutor;
 
     Map<DeviceId, DefaultGroupHandler> groupHandlerMap = new ConcurrentHashMap<>();
     /**
@@ -376,6 +379,7 @@ public class SegmentRoutingManager implements SegmentRoutingService {
         hostEventExecutor = Executors.newSingleThreadScheduledExecutor(groupedThreads("sr-event-host", "%d", log));
         routeEventExecutor = Executors.newSingleThreadScheduledExecutor(groupedThreads("sr-event-route", "%d", log));
         mcastEventExecutor = Executors.newSingleThreadScheduledExecutor(groupedThreads("sr-event-mcast", "%d", log));
+        packetExecutor = Executors.newSingleThreadExecutor(groupedThreads("sr-packet", "%d", log));
 
         log.debug("Creating EC map nsnextobjectivestore");
         EventuallyConsistentMapBuilder<DestinationSetNextObjectiveStoreKey, NextNeighbors>
@@ -529,6 +533,13 @@ public class SegmentRoutingManager implements SegmentRoutingService {
         hostEventExecutor.shutdown();
         routeEventExecutor.shutdown();
         mcastEventExecutor.shutdown();
+        packetExecutor.shutdown();
+
+        mainEventExecutor = null;
+        hostEventExecutor = null;
+        routeEventExecutor = null;
+        mcastEventExecutor = null;
+        packetExecutor = null;
 
         cfgService.removeListener(cfgListener);
         cfgService.unregisterConfigFactory(deviceConfigFactory);
@@ -748,6 +759,11 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     @Override
     public Map<McastStoreKey, McastRole> getMcastRoles(IpAddress mcastIp) {
         return mcastHandler.getMcastRoles(mcastIp);
+    }
+
+    @Override
+    public Map<McastRoleStoreKey, McastRole> getMcastRoles(IpAddress mcastIp, ConnectPoint sourcecp) {
+        return mcastHandler.getMcastRoles(mcastIp, sourcecp);
     }
 
     @Override
@@ -1030,7 +1046,10 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalPacketProcessor implements PacketProcessor {
         @Override
         public void process(PacketContext context) {
+            packetExecutor.execute(() -> processPacketInternal(context));
+        }
 
+        private void processPacketInternal(PacketContext context) {
             if (context.isHandled()) {
                 return;
             }
@@ -1512,6 +1531,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
 
         @Override
         public void event(NetworkConfigEvent event) {
+            if (mainEventExecutor == null) {
+                return;
+            }
             checkState(appCfgHandler != null, "NetworkConfigEventHandler is not initialized");
             checkState(xConnectHandler != null, "XConnectHandler is not initialized");
             switch (event.type()) {
@@ -1565,6 +1587,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalLinkListener implements LinkListener {
         @Override
         public void event(LinkEvent event) {
+            if (mainEventExecutor == null) {
+                return;
+            }
             if (event.type() == LinkEvent.Type.LINK_ADDED ||
                     event.type() == LinkEvent.Type.LINK_UPDATED ||
                     event.type() == LinkEvent.Type.LINK_REMOVED) {
@@ -1581,6 +1606,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalDeviceListener implements DeviceListener {
         @Override
         public void event(DeviceEvent event) {
+            if (mainEventExecutor == null) {
+                return;
+            }
             switch (event.type()) {
                 case DEVICE_ADDED:
                 case PORT_UPDATED:
@@ -1602,6 +1630,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalTopologyListener implements TopologyListener {
         @Override
         public void event(TopologyEvent event) {
+            if (mainEventExecutor == null) {
+                return;
+            }
             switch (event.type()) {
                 case TOPOLOGY_CHANGED:
                     log.trace("Schedule Topology event {}", event);
@@ -1619,6 +1650,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalHostListener implements HostListener {
         @Override
         public void event(HostEvent event) {
+            if (hostEventExecutor == null) {
+                return;
+            }
             switch (event.type()) {
                 case HOST_ADDED:
                 case HOST_MOVED:
@@ -1637,6 +1671,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalMcastListener implements McastListener {
         @Override
         public void event(McastEvent event) {
+            if (mcastEventExecutor == null) {
+                return;
+            }
             switch (event.type()) {
                 case SOURCES_ADDED:
                 case SOURCES_REMOVED:
@@ -1657,6 +1694,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalRouteEventListener implements RouteListener {
         @Override
         public void event(RouteEvent event) {
+            if (routeEventExecutor == null) {
+                return;
+            }
             switch (event.type()) {
                 case ROUTE_ADDED:
                 case ROUTE_UPDATED:
@@ -1675,6 +1715,9 @@ public class SegmentRoutingManager implements SegmentRoutingService {
     private class InternalMastershipListener implements MastershipListener {
         @Override
         public void event(MastershipEvent event) {
+            if (mainEventExecutor == null) {
+                return;
+            }
             switch (event.type()) {
             case MASTER_CHANGED:
                 log.debug("Mastership event: {}/{}", event.subject(),

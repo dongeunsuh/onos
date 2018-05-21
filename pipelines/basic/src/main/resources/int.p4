@@ -42,7 +42,7 @@ register<int<32>>(1) rate_based_counter_reg;
 register<int<32>>(1) temp_counter_reg;
 
 
-control int_ingress (
+control ingress (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
     inout standard_metadata_t standard_metadata) {
@@ -51,7 +51,6 @@ control int_ingress (
         port_counters_ingress.apply(hdr, standard_metadata);
         packetio_ingress.apply(hdr, standard_metadata);
         table0_control.apply(hdr, local_metadata, standard_metadata);
-        process_set_source_sink.apply(hdr, local_metadata, standard_metadata);
     }
 }
 
@@ -78,7 +77,7 @@ control int_source_transit_sink (
     }
 }*/
 
-control int_egress (
+control egress (
     inout headers_t hdr,
     inout local_metadata_t local_metadata,
     inout standard_metadata_t standard_metadata) {
@@ -116,15 +115,19 @@ control int_egress (
             } else if (local_metadata.sampling_strategy == EVENT_BASED) {
                 local_metadata.event_based_activated = 1;
             }
-            if (local_metadata.int_meta.sink == 0 && local_metadata.int_meta.source == 1) {
-                process_int_source.apply(hdr, local_metadata, standard_metadata);
+            process_set_source_sink.apply(hdr, local_metadata, standard_metadata);
+            if (local_metadata.int_meta.source == 1) {
+                 process_int_source.apply(hdr, local_metadata, standard_metadata);
             }
+
             if(hdr.int_header.isValid()) {
                 process_int_transit.apply(hdr, local_metadata, standard_metadata);
                 // update underlay header based on INT information inserted
                 process_int_outer_encap.apply(hdr, local_metadata, standard_metadata);
-                // int sink
-                process_int_sink.apply(hdr, local_metadata, standard_metadata);
+                if (local_metadata.int_meta.sink == 1) {
+                    // int sink
+                    process_int_sink.apply(hdr, local_metadata, standard_metadata);
+                }
             }
         }
         port_counters_egress.apply(hdr, standard_metadata);
@@ -135,8 +138,8 @@ control int_egress (
 V1Switch(
     int_parser(),
     verify_checksum_control(),
-    int_ingress(),
-    int_egress(),
+    ingress(),
+    egress(),
     compute_checksum_control(),
     int_deparser()
 ) main;

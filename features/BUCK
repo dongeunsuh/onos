@@ -39,6 +39,10 @@ osgi_feature (
     '//lib:mapdb',
     '//lib:bcpkix-jdk15on',
     '//lib:bcprov-jdk15on',
+    '//lib:commons-jxpath', # FIXME: move xpath lib dependency to the right place
+    '//lib:commons-beanutils', # jxpath dependency
+    '//lib:jdom',  # jxpath dependency
+    '//lib:sigar',
   ]
 )
 
@@ -122,6 +126,17 @@ osgi_feature (
     '//lib:jetty-websocket',
     '//utils/rest:onlab-rest',
     '//web/gui:onos-gui',
+  ]
+)
+
+osgi_feature (
+  name = 'onos-gui2',
+  title = 'ONOS GUI2 console components',
+  required_features = ['onos-api', 'onos-thirdparty-web'],
+  included_bundles = [
+    '//lib:jetty-websocket',
+    '//utils/rest:onlab-rest',
+    '//web/gui2:onos-gui2',
   ]
 )
 
